@@ -42,12 +42,10 @@ private:
 	// Driving
 	FVector DrivingForce;
 	FVector Velocity;
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float MassOfTheCarInKg = 1000;
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float EnginePowerInNewtons = 10000;
-	UPROPERTY(EditAnywhere)
-	float CarDragCoefficient = 16.f;
 	float Throttle = 0.f;
 
 	void UpdateLocationFormVelocity(float DeltaTime);
@@ -57,4 +55,12 @@ private:
 	float MaxTurnAnglePerSecond = 90.f;
 
 	void ApplyRotation(float DeltaTime);
+
+	// Forces
+	UPROPERTY(EditAnywhere, Category = "Car Properties")
+	float CarDragCoefficient = 16.f;
+	UPROPERTY(EditAnywhere, Category = "Car Properties")
+	float RollingResistanceCoefficient = 1.f;
+	FVector GetAirResistance();
+	FVector GetRollingResistance();
 };

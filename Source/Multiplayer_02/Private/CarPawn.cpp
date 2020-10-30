@@ -81,9 +81,9 @@ void ACarPawn::UpdateLocationFormVelocity(float DeltaTime)
 {
 	// Find driving force
 	DrivingForce = GetActorForwardVector() * EnginePowerInNewtons * Throttle;
-	// Find and apply air resistance force
-	FVector AirResistance = - Velocity.GetSafeNormal() * FMath::Square(Velocity.Size()) * CarDragCoefficient;
-	DrivingForce += AirResistance;
+	// Find and apply air resistance and rolling resistance forces
+	DrivingForce += GetAirResistance();
+	DrivingForce += GetRollingResistance();
 	// Find acceleration
 	FVector Acceleration = DrivingForce / MassOfTheCarInKg;
 	// Find velocity
@@ -98,6 +98,18 @@ void ACarPawn::UpdateLocationFormVelocity(float DeltaTime)
 	{
 		Velocity = FVector::ZeroVector;
 	}
+}
+
+FVector ACarPawn::GetAirResistance()
+{
+	return -Velocity.GetSafeNormal() * FMath::Square(Velocity.Size()) * CarDragCoefficient;
+}
+
+FVector ACarPawn::GetRollingResistance()
+{
+	float AccelerationDueToGravity = - GetWorld()->GetGravityZ()/100 * MassOfTheCarInKg;
+	FVector NormalForce = - Velocity.GetSafeNormal() * RollingResistanceCoefficient * AccelerationDueToGravity;
+	return NormalForce;
 }
 
 // Called to bind functionality to input
