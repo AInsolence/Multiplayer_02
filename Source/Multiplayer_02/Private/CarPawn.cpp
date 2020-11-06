@@ -5,12 +5,16 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/BoxComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Net/UnrealNetwork.h"
 
 // Sets default values
 ACarPawn::ACarPawn()
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	// Make acrtor be replicated
+	bReplicates = true;
 
 	// Create mesh component
 	CollisionBox = CreateDefaultSubobject<UBoxComponent>("CollisionBox");
@@ -51,10 +55,20 @@ ACarPawn::ACarPawn()
 	}
 }
 
+void ACarPawn::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ACarPawn, ReplicatedTransform);
+	DOREPLIFETIME(ACarPawn, Velocity);
+	DOREPLIFETIME(ACarPawn, Throttle);
+	DOREPLIFETIME(ACarPawn, SteeringThrow);
+}
+
 // Called when the game starts or when spawned
 void ACarPawn::BeginPlay()
 {
 	Super::BeginPlay();
+	NetUpdateFrequency = 1.0f;
 }
 
 // Called every frame
@@ -63,18 +77,36 @@ void ACarPawn::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	// Driving
 	UpdateLocationFormVelocity(DeltaTime);
-	//Steering
+	// Steering
 	ApplyRotation(DeltaTime);
+	// Show Net Role
+	DrawDebugString(GetWorld(),
+					FVector(0, 0, 100), 
+					GetEnumRoleString(this->GetLocalRole()), 
+					this, 
+					FColor::White, 
+					DeltaTime);
+	// Set actor transform on the server 
+	if (HasAuthority())
+	{
+		ReplicatedTransform = GetActorTransform();
+	}
+}
+
+void ACarPawn::OnRep_ReplicatedTransform()
+{// Replicate actors transform on the client if on the server it was changed
+	SetActorTransform(ReplicatedTransform);
 }
 
 void ACarPawn::ApplyRotation(float DeltaTime)
 {
 	// Find turn angle in this frame
-	float DeltaTurnAngle = MaxTurnAnglePerSecond * DeltaTime * SteeringThrow;
-	FQuat DeltaTurnRotation(GetActorUpVector(), FMath::DegreesToRadians(DeltaTurnAngle));
-	AddActorWorldRotation(DeltaTurnRotation);
+	float DeltaLocation = FVector::DotProduct(GetActorForwardVector(), Velocity) * DeltaTime;
+	float TurnAngle = DeltaLocation/SteeringRadius * SteeringThrow;
+	FQuat TurnRotation(GetActorUpVector(), TurnAngle);
+	AddActorWorldRotation(TurnRotation);
 	// Turn car velocity vector
-	Velocity = DeltaTurnRotation.RotateVector(Velocity);
+	Velocity = TurnRotation.RotateVector(Velocity);
 }
 
 void ACarPawn::UpdateLocationFormVelocity(float DeltaTime)
@@ -112,6 +144,31 @@ FVector ACarPawn::GetRollingResistance()
 	return NormalForce;
 }
 
+FString ACarPawn::GetEnumRoleString(ENetRole LocalRole)
+{
+	switch (LocalRole)
+	{
+		case ROLE_None:
+			return "None";
+			break;
+		case ROLE_SimulatedProxy:
+			return "SimulatedProxy";
+			break;
+		case ROLE_AutonomousProxy:
+			return "AutonomousProxy";
+			break;
+		case ROLE_Authority:
+			return "Authority";
+			break;
+		case ROLE_MAX:
+			return "MAX";
+			break;
+		default:
+			return "ERROR";
+			break;
+	}
+}
+
 // Called to bind functionality to input
 void ACarPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
@@ -121,9 +178,32 @@ void ACarPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void ACarPawn::MoveForward(float Value)
 {
 	Throttle = Value;
+	Server_MoveForward(Value);
 }
+
+void ACarPawn::Server_MoveForward_Implementation(float Value)
+{
+	Throttle = Value;
+}
+
+bool ACarPawn::Server_MoveForward_Validate(float Value)
+{
+	return FMath::Abs(Value) <= 1.f;
+}
+
 
 void ACarPawn::MoveRight(float Value)
 {
 	SteeringThrow = Value;
+	Server_MoveRight(Value);
+}
+
+void ACarPawn::Server_MoveRight_Implementation(float Value)
+{
+	SteeringThrow = Value;
+}
+
+bool ACarPawn::Server_MoveRight_Validate(float Value)
+{
+	return FMath::Abs(Value) <= 1.f;
 }
