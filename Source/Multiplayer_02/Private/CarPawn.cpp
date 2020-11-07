@@ -58,8 +58,7 @@ ACarPawn::ACarPawn()
 void ACarPawn::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ACarPawn, ReplicatedTransform);
-	DOREPLIFETIME(ACarPawn, Velocity);
+	DOREPLIFETIME(ACarPawn, ServerState);
 	DOREPLIFETIME(ACarPawn, Throttle);
 	DOREPLIFETIME(ACarPawn, SteeringThrow);
 }
@@ -75,10 +74,24 @@ void ACarPawn::BeginPlay()
 void ACarPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Create and send move to the server
+	if (IsLocallyControlled())
+	{
+		FCarPawnMove Move;
+		Move.DeltaTime = DeltaTime;
+		Move.SteeringThrow = SteeringThrow;
+		Move.Throttle = Throttle;
+		// TODO set TimeOfExecuting;
+
+		Server_SendMove(Move);
+	}
+
 	// Driving
 	UpdateLocationFormVelocity(DeltaTime);
 	// Steering
 	ApplyRotation(DeltaTime);
+
 	// Show Net Role
 	DrawDebugString(GetWorld(),
 					FVector(0, 0, 100), 
@@ -86,16 +99,20 @@ void ACarPawn::Tick(float DeltaTime)
 					this, 
 					FColor::White, 
 					DeltaTime);
-	// Set actor transform on the server 
+
+	// Create server state on the server 
 	if (HasAuthority())
 	{
-		ReplicatedTransform = GetActorTransform();
+		ServerState.Transform = GetActorTransform();
+		ServerState.Velocity = Velocity;
+		// TODO Update last move here
 	}
 }
 
-void ACarPawn::OnRep_ReplicatedTransform()
-{// Replicate actors transform on the client if on the server it was changed
-	SetActorTransform(ReplicatedTransform);
+void ACarPawn::OnRep_ServerState()
+{// Replicate actors state on the client if on the server it was changed
+	SetActorTransform(ServerState.Transform);
+	Velocity = ServerState.Velocity;
 }
 
 void ACarPawn::ApplyRotation(float DeltaTime)
@@ -178,32 +195,20 @@ void ACarPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void ACarPawn::MoveForward(float Value)
 {
 	Throttle = Value;
-	Server_MoveForward(Value);
 }
-
-void ACarPawn::Server_MoveForward_Implementation(float Value)
-{
-	Throttle = Value;
-}
-
-bool ACarPawn::Server_MoveForward_Validate(float Value)
-{
-	return FMath::Abs(Value) <= 1.f;
-}
-
 
 void ACarPawn::MoveRight(float Value)
 {
 	SteeringThrow = Value;
-	Server_MoveRight(Value);
 }
 
-void ACarPawn::Server_MoveRight_Implementation(float Value)
+void ACarPawn::Server_SendMove_Implementation(FCarPawnMove Move)
 {
-	SteeringThrow = Value;
+	Throttle = Move.Throttle;
+	SteeringThrow = Move.SteeringThrow;
 }
 
-bool ACarPawn::Server_MoveRight_Validate(float Value)
+bool ACarPawn::Server_SendMove_Validate(FCarPawnMove Move)
 {
-	return FMath::Abs(Value) <= 1.f;
+	return true;// TODO check move
 }

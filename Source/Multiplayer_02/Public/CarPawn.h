@@ -6,6 +6,37 @@
 #include "GameFramework/Pawn.h"
 #include "CarPawn.generated.h"
 
+USTRUCT()
+struct FCarPawnMove
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, Category = "Car Move")
+	float Throttle = 0.f;
+	UPROPERTY(EditAnywhere, Category = "Car Move")
+	float SteeringThrow = 0.f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Car Move")
+	float DeltaTime;
+
+	UPROPERTY(VisibleAnywhere, Category = "Car Move")
+	float TimeOfExecuting;
+};
+
+USTRUCT()
+struct FCarPawnState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, Category = "Car State")
+	FTransform Transform;
+	UPROPERTY(EditAnywhere, Category = "Car State")
+	FVector Velocity;
+
+	UPROPERTY(VisibleAnywhere, Category = "Car State")
+	FCarPawnMove LastMove;
+};
+
 UCLASS()
 class MULTIPLAYER_02_API ACarPawn : public APawn
 {
@@ -41,22 +72,20 @@ public:
 
 	// Server RPCs
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_MoveForward(float Value);
-	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_MoveRight(float Value);
+	void Server_SendMove(FCarPawnMove Move);
 
 private:
 
-	// Replicate propertie by OnRep EVENT
-	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedTransform)
-	FTransform ReplicatedTransform;
+	// Replicate property by OnRep EVENT
+	UPROPERTY(ReplicatedUsing = OnRep_ServerState)
+	FCarPawnState ServerState;
 	UFUNCTION() // Replication function calls OnReps
-	void OnRep_ReplicatedTransform();
+	void OnRep_ServerState();
 
 	// Driving
 	FVector DrivingForce;
-	UPROPERTY(VisibleAnywhere, Replicated, Category = "Car Net Properties")
 	FVector Velocity;
+	
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float MassOfTheCarInKg = 1000;
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
