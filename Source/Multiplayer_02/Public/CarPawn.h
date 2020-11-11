@@ -76,33 +76,32 @@ public:
 
 private:
 
-	// Replicate property by OnRep EVENT
+	// Replicate car state by OnRep EVENT
 	UPROPERTY(ReplicatedUsing = OnRep_ServerState)
 	FCarPawnState ServerState;
 	UFUNCTION() // Replication function calls OnReps
 	void OnRep_ServerState();
 
+	// Move simulation helpers
+	void SimulateMove(FCarPawnMove Move);
+	TArray<FCarPawnMove> UnacknowledgeMovesArray;
+	void RemoveStaleMoves(FCarPawnMove LastMove);
+
 	// Driving
 	FVector DrivingForce;
 	FVector Velocity;
-	
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float MassOfTheCarInKg = 1000;
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float EnginePowerInNewtons = 10000;
-	UPROPERTY(VisibleAnywhere, Replicated, Category = "Car Net Properties")
 	float Throttle = 0.f;
-
-	void UpdateLocationFormVelocity(float DeltaTime);
+	void UpdateLocationFormVelocity(float DeltaTime, float ThrottleToSet);
 	
 	// Steering
-	UPROPERTY(VisibleAnywhere, Replicated, Category = "Car Net Properties")
 	float SteeringThrow = 0.f;
-
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
 	float SteeringRadius = 10.f;
-
-	void ApplyRotation(float DeltaTime);
+	void ApplyRotation(float DeltaTime, float SteeringThrowToSet);
 
 	// Forces
 	UPROPERTY(EditAnywhere, Category = "Car Properties")
@@ -111,6 +110,7 @@ private:
 	float RollingResistanceCoefficient = 1.f;
 	FVector GetAirResistance();
 	FVector GetRollingResistance();
+	
 	//
 	FString GetEnumRoleString(ENetRole Role);
 };

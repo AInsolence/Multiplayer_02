@@ -59,8 +59,6 @@ void ACarPawn::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifeti
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ACarPawn, ServerState);
-	DOREPLIFETIME(ACarPawn, Throttle);
-	DOREPLIFETIME(ACarPawn, SteeringThrow);
 }
 
 // Called when the game starts or when spawned
@@ -84,52 +82,72 @@ void ACarPawn::Tick(float DeltaTime)
 		Move.Throttle = Throttle;
 		// TODO set TimeOfExecuting;
 
+		if (!HasAuthority())
+		{
+			// Simulate move on the client
+			SimulateMove(Move);
+			//Add move to the unacknowledge moves array
+			UnacknowledgeMovesArray.Add(Move);
+			UE_LOG(LogTemp, Warning, TEXT("Moves queue length = %d"), UnacknowledgeMovesArray.Num());
+		}
+		// Send move to the server checking
 		Server_SendMove(Move);
 	}
 
-	// Driving
-	UpdateLocationFormVelocity(DeltaTime);
-	// Steering
-	ApplyRotation(DeltaTime);
 
 	// Show Net Role
 	DrawDebugString(GetWorld(),
-					FVector(0, 0, 100), 
-					GetEnumRoleString(this->GetLocalRole()), 
-					this, 
-					FColor::White, 
-					DeltaTime);
+		FVector(0, 0, 100),
+		GetEnumRoleString(this->GetLocalRole()),
+		this,
+		FColor::White,
+		DeltaTime);
+}
 
-	// Create server state on the server 
-	if (HasAuthority())
+void ACarPawn::SimulateMove(FCarPawnMove Move)
+{
+	// Driving
+	UpdateLocationFormVelocity(Move.DeltaTime, Move.Throttle);
+	// Steering
+	ApplyRotation(Move.DeltaTime, Move.SteeringThrow);
+}
+
+void ACarPawn::RemoveStaleMoves(FCarPawnMove LastMove)
+{
+	TArray<FCarPawnMove> NewMoves;
+	for (const FCarPawnMove& Move : UnacknowledgeMovesArray)
 	{
-		ServerState.Transform = GetActorTransform();
-		ServerState.Velocity = Velocity;
-		// TODO Update last move here
+		if (Move.TimeOfExecuting > LastMove.TimeOfExecuting)
+		{
+			NewMoves.Add(Move);
+		}
 	}
+	UnacknowledgeMovesArray = NewMoves;
 }
 
 void ACarPawn::OnRep_ServerState()
 {// Replicate actors state on the client if on the server it was changed
 	SetActorTransform(ServerState.Transform);
 	Velocity = ServerState.Velocity;
+	// Update unacknowledge moves
+	RemoveStaleMoves(ServerState.LastMove);
 }
 
-void ACarPawn::ApplyRotation(float DeltaTime)
+void ACarPawn::ApplyRotation(float DeltaTime, float SteeringThrowToSet)
 {
 	// Find turn angle in this frame
 	float DeltaLocation = FVector::DotProduct(GetActorForwardVector(), Velocity) * DeltaTime;
-	float TurnAngle = DeltaLocation/SteeringRadius * SteeringThrow;
+	float TurnAngle = DeltaLocation/SteeringRadius * SteeringThrowToSet;
 	FQuat TurnRotation(GetActorUpVector(), TurnAngle);
 	AddActorWorldRotation(TurnRotation);
 	// Turn car velocity vector
 	Velocity = TurnRotation.RotateVector(Velocity);
 }
 
-void ACarPawn::UpdateLocationFormVelocity(float DeltaTime)
+void ACarPawn::UpdateLocationFormVelocity(float DeltaTime, float ThrottleToSet)
 {
 	// Find driving force
-	DrivingForce = GetActorForwardVector() * EnginePowerInNewtons * Throttle;
+	DrivingForce = GetActorForwardVector() * EnginePowerInNewtons * ThrottleToSet;
 	// Find and apply air resistance and rolling resistance forces
 	DrivingForce += GetAirResistance();
 	DrivingForce += GetRollingResistance();
@@ -203,9 +221,12 @@ void ACarPawn::MoveRight(float Value)
 }
 
 void ACarPawn::Server_SendMove_Implementation(FCarPawnMove Move)
-{
-	Throttle = Move.Throttle;
-	SteeringThrow = Move.SteeringThrow;
+{// Simulate move
+	SimulateMove(Move);
+	// Send the canonical state to the server
+	ServerState.Transform = GetActorTransform();
+	ServerState.Velocity = Velocity;
+	ServerState.LastMove = Move;
 }
 
 bool ACarPawn::Server_SendMove_Validate(FCarPawnMove Move)
