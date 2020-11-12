@@ -7,6 +7,7 @@
 #include "Components/BoxComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
+#include "GameFramework/GameStateBase.h"
 
 // Sets default values
 ACarPawn::ACarPawn()
@@ -80,7 +81,7 @@ void ACarPawn::Tick(float DeltaTime)
 		Move.DeltaTime = DeltaTime;
 		Move.SteeringThrow = SteeringThrow;
 		Move.Throttle = Throttle;
-		// TODO set TimeOfExecuting;
+		Move.TimeOfExecuting = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
 
 		if (!HasAuthority())
 		{
@@ -104,7 +105,7 @@ void ACarPawn::Tick(float DeltaTime)
 		DeltaTime);
 }
 
-void ACarPawn::SimulateMove(FCarPawnMove Move)
+void ACarPawn::SimulateMove(const FCarPawnMove& Move)
 {
 	// Driving
 	UpdateLocationFormVelocity(Move.DeltaTime, Move.Throttle);
@@ -131,6 +132,11 @@ void ACarPawn::OnRep_ServerState()
 	Velocity = ServerState.Velocity;
 	// Update unacknowledge moves
 	RemoveStaleMoves(ServerState.LastMove);
+	// Reproduce all moves after recieving the server move state
+	for (const FCarPawnMove& Move : UnacknowledgeMovesArray)
+	{
+		SimulateMove(Move);
+	}
 }
 
 void ACarPawn::ApplyRotation(float DeltaTime, float SteeringThrowToSet)

@@ -83,7 +83,7 @@ private:
 	void OnRep_ServerState();
 
 	// Move simulation helpers
-	void SimulateMove(FCarPawnMove Move);
+	void SimulateMove(const FCarPawnMove& Move);
 	TArray<FCarPawnMove> UnacknowledgeMovesArray;
 	void RemoveStaleMoves(FCarPawnMove LastMove);
 
