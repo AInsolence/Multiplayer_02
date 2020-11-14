@@ -74,27 +74,29 @@ void ACarPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Create and send move to the server
-	if (IsLocallyControlled())
+	// Server(Authority) code
+	if (GetLocalRole() == ROLE_Authority && IsLocallyControlled())
 	{
-		FCarPawnMove Move;
-		Move.DeltaTime = DeltaTime;
-		Move.SteeringThrow = SteeringThrow;
-		Move.Throttle = Throttle;
-		Move.TimeOfExecuting = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
-
-		if (!HasAuthority())
-		{
-			// Simulate move on the client
-			SimulateMove(Move);
-			//Add move to the unacknowledge moves array
-			UnacknowledgeMovesArray.Add(Move);
-			UE_LOG(LogTemp, Warning, TEXT("Moves queue length = %d"), UnacknowledgeMovesArray.Num());
-		}
-		// Send move to the server checking
+		// Create and simulate move on the server side
+		auto Move = CreateMove(DeltaTime);
+		SimulateMove(Move);
+	}
+	// Autonomous-proxy client code
+	if (GetLocalRole() == ROLE_AutonomousProxy)
+	{
+		// Create and simulate move on the client side
+		auto Move = CreateMove(DeltaTime);
+		SimulateMove(Move);
+		// Add move to the queue and send to the server
+		UnacknowledgeMovesArray.Add(Move);
+		UE_LOG(LogTemp, Warning, TEXT("Moves queue length = %d"), UnacknowledgeMovesArray.Num());
 		Server_SendMove(Move);
 	}
-
+	// Simulated-proxy client code
+	if (GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		SimulateMove(ServerState.LastMove);
+	}
 
 	// Show Net Role
 	DrawDebugString(GetWorld(),
@@ -103,6 +105,17 @@ void ACarPawn::Tick(float DeltaTime)
 		this,
 		FColor::White,
 		DeltaTime);
+}
+
+FCarPawnMove ACarPawn::CreateMove(float DeltaTime)
+{
+	FCarPawnMove Move;
+	Move.DeltaTime = DeltaTime;
+	Move.SteeringThrow = SteeringThrow;
+	Move.Throttle = Throttle;
+	Move.TimeOfExecuting = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
+
+	return Move;
 }
 
 void ACarPawn::SimulateMove(const FCarPawnMove& Move)

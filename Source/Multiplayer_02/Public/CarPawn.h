@@ -83,6 +83,7 @@ private:
 	void OnRep_ServerState();
 
 	// Move simulation helpers
+	FCarPawnMove CreateMove(float DeltaTime);
 	void SimulateMove(const FCarPawnMove& Move);
 	TArray<FCarPawnMove> UnacknowledgeMovesArray;
 	void RemoveStaleMoves(FCarPawnMove LastMove);
