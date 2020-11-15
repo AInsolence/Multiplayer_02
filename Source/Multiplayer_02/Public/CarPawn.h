@@ -4,38 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "Components/CarMovementComponent.h"
+#include "Components/MoveReplicationComponent.h"
 #include "CarPawn.generated.h"
-
-USTRUCT()
-struct FCarPawnMove
-{
-	GENERATED_BODY()
-
-	UPROPERTY(VisibleAnywhere, Category = "Car Move")
-	float Throttle = 0.f;
-	UPROPERTY(EditAnywhere, Category = "Car Move")
-	float SteeringThrow = 0.f;
-
-	UPROPERTY(VisibleAnywhere, Category = "Car Move")
-	float DeltaTime;
-
-	UPROPERTY(VisibleAnywhere, Category = "Car Move")
-	float TimeOfExecuting;
-};
-
-USTRUCT()
-struct FCarPawnState
-{
-	GENERATED_BODY()
-
-	UPROPERTY(VisibleAnywhere, Category = "Car State")
-	FTransform Transform;
-	UPROPERTY(EditAnywhere, Category = "Car State")
-	FVector Velocity;
-
-	UPROPERTY(VisibleAnywhere, Category = "Car State")
-	FCarPawnMove LastMove;
-};
 
 UCLASS()
 class MULTIPLAYER_02_API ACarPawn : public APawn
@@ -49,6 +20,7 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+
 	// Components
 	UPROPERTY(EditAnywhere, Category = "Car Components")
 	class UBoxComponent* CollisionBox;
@@ -58,60 +30,21 @@ protected:
 	class USpringArmComponent* SpringArm;
 	UPROPERTY(EditAnywhere, Category = "Car Components")
 	class UCameraComponent* Camera_01;
+	
+	UPROPERTY(EditAnywhere, Category = "Car Components")
+	class UMoveReplicationComponent* MoveReplicationComponent;
 
 public:	
+
+	UPROPERTY(EditAnywhere, Category = "Car Components")
+	class UCarMovementComponent* MovementComponent;
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// Local functions
+	// Input functions
 	void MoveForward(float Value);
 	void MoveRight(float Value);
-
-	// Server RPCs
-	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_SendMove(FCarPawnMove Move);
-
-private:
-
-	// Replicate car state by OnRep EVENT
-	UPROPERTY(ReplicatedUsing = OnRep_ServerState)
-	FCarPawnState ServerState;
-	UFUNCTION() // Replication function calls OnReps
-	void OnRep_ServerState();
-
-	// Move simulation helpers
-	FCarPawnMove CreateMove(float DeltaTime);
-	void SimulateMove(const FCarPawnMove& Move);
-	TArray<FCarPawnMove> UnacknowledgeMovesArray;
-	void RemoveStaleMoves(FCarPawnMove LastMove);
-
-	// Driving
-	FVector DrivingForce;
-	FVector Velocity;
-	UPROPERTY(EditAnywhere, Category = "Car Properties")
-	float MassOfTheCarInKg = 1000;
-	UPROPERTY(EditAnywhere, Category = "Car Properties")
-	float EnginePowerInNewtons = 10000;
-	float Throttle = 0.f;
-	void UpdateLocationFormVelocity(float DeltaTime, float ThrottleToSet);
-	
-	// Steering
-	float SteeringThrow = 0.f;
-	UPROPERTY(EditAnywhere, Category = "Car Properties")
-	float SteeringRadius = 10.f;
-	void ApplyRotation(float DeltaTime, float SteeringThrowToSet);
-
-	// Forces
-	UPROPERTY(EditAnywhere, Category = "Car Properties")
-	float CarDragCoefficient = 16.f;
-	UPROPERTY(EditAnywhere, Category = "Car Properties")
-	float RollingResistanceCoefficient = 1.f;
-	FVector GetAirResistance();
-	FVector GetRollingResistance();
-	
-	//
-	FString GetEnumRoleString(ENetRole Role);
 };

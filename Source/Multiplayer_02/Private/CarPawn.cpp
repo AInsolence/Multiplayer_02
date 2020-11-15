@@ -6,7 +6,6 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/BoxComponent.h"
 #include "DrawDebugHelpers.h"
-#include "Net/UnrealNetwork.h"
 #include "GameFramework/GameStateBase.h"
 
 // Sets default values
@@ -26,6 +25,14 @@ ACarPawn::ACarPawn()
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>("SpringArm");
 	// Create main camera
 	Camera_01 = CreateDefaultSubobject<UCameraComponent>("Camera_01");
+	// Create a car movement component and set it replicated
+	MovementComponent = CreateDefaultSubobject<UCarMovementComponent>("CarMovementComponent");
+	// Create a car movement component and set it replicated
+	MoveReplicationComponent = CreateDefaultSubobject<UMoveReplicationComponent>("MoveReplicationComponent");
+	if (MoveReplicationComponent)
+	{
+		MoveReplicationComponent->SetIsReplicated(true);
+	}
 
 	// Set components hierarcy attachment
 	if (ensureMsgf(CollisionBox, TEXT("CollisionBox component is not found")))
@@ -56,17 +63,14 @@ ACarPawn::ACarPawn()
 	}
 }
 
-void ACarPawn::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ACarPawn, ServerState);
-}
-
 // Called when the game starts or when spawned
 void ACarPawn::BeginPlay()
 {
 	Super::BeginPlay();
-	NetUpdateFrequency = 1.0f;
+	if (HasAuthority())
+	{
+		NetUpdateFrequency = 1.0f;
+	}
 }
 
 // Called every frame
@@ -74,153 +78,13 @@ void ACarPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Server(Authority) code
-	if (GetLocalRole() == ROLE_Authority && IsLocallyControlled())
-	{
-		// Create and simulate move on the server side
-		auto Move = CreateMove(DeltaTime);
-		SimulateMove(Move);
-	}
-	// Autonomous-proxy client code
-	if (GetLocalRole() == ROLE_AutonomousProxy)
-	{
-		// Create and simulate move on the client side
-		auto Move = CreateMove(DeltaTime);
-		SimulateMove(Move);
-		// Add move to the queue and send to the server
-		UnacknowledgeMovesArray.Add(Move);
-		UE_LOG(LogTemp, Warning, TEXT("Moves queue length = %d"), UnacknowledgeMovesArray.Num());
-		Server_SendMove(Move);
-	}
-	// Simulated-proxy client code
-	if (GetLocalRole() == ROLE_SimulatedProxy)
-	{
-		SimulateMove(ServerState.LastMove);
-	}
-
 	// Show Net Role
 	DrawDebugString(GetWorld(),
 		FVector(0, 0, 100),
-		GetEnumRoleString(this->GetLocalRole()),
+		MoveReplicationComponent->GetEnumRoleString(this->GetLocalRole()),
 		this,
 		FColor::White,
 		DeltaTime);
-}
-
-FCarPawnMove ACarPawn::CreateMove(float DeltaTime)
-{
-	FCarPawnMove Move;
-	Move.DeltaTime = DeltaTime;
-	Move.SteeringThrow = SteeringThrow;
-	Move.Throttle = Throttle;
-	Move.TimeOfExecuting = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
-
-	return Move;
-}
-
-void ACarPawn::SimulateMove(const FCarPawnMove& Move)
-{
-	// Driving
-	UpdateLocationFormVelocity(Move.DeltaTime, Move.Throttle);
-	// Steering
-	ApplyRotation(Move.DeltaTime, Move.SteeringThrow);
-}
-
-void ACarPawn::RemoveStaleMoves(FCarPawnMove LastMove)
-{
-	TArray<FCarPawnMove> NewMoves;
-	for (const FCarPawnMove& Move : UnacknowledgeMovesArray)
-	{
-		if (Move.TimeOfExecuting > LastMove.TimeOfExecuting)
-		{
-			NewMoves.Add(Move);
-		}
-	}
-	UnacknowledgeMovesArray = NewMoves;
-}
-
-void ACarPawn::OnRep_ServerState()
-{// Replicate actors state on the client if on the server it was changed
-	SetActorTransform(ServerState.Transform);
-	Velocity = ServerState.Velocity;
-	// Update unacknowledge moves
-	RemoveStaleMoves(ServerState.LastMove);
-	// Reproduce all moves after recieving the server move state
-	for (const FCarPawnMove& Move : UnacknowledgeMovesArray)
-	{
-		SimulateMove(Move);
-	}
-}
-
-void ACarPawn::ApplyRotation(float DeltaTime, float SteeringThrowToSet)
-{
-	// Find turn angle in this frame
-	float DeltaLocation = FVector::DotProduct(GetActorForwardVector(), Velocity) * DeltaTime;
-	float TurnAngle = DeltaLocation/SteeringRadius * SteeringThrowToSet;
-	FQuat TurnRotation(GetActorUpVector(), TurnAngle);
-	AddActorWorldRotation(TurnRotation);
-	// Turn car velocity vector
-	Velocity = TurnRotation.RotateVector(Velocity);
-}
-
-void ACarPawn::UpdateLocationFormVelocity(float DeltaTime, float ThrottleToSet)
-{
-	// Find driving force
-	DrivingForce = GetActorForwardVector() * EnginePowerInNewtons * ThrottleToSet;
-	// Find and apply air resistance and rolling resistance forces
-	DrivingForce += GetAirResistance();
-	DrivingForce += GetRollingResistance();
-	// Find acceleration
-	FVector Acceleration = DrivingForce / MassOfTheCarInKg;
-	// Find velocity
-	Velocity += Acceleration * DeltaTime;
-	// Find distance traveled in this frame
-	FVector DistansPerFrame = Velocity * DeltaTime * 100;
-	// Change car position
-	FHitResult HitResult;
-	AddActorWorldOffset(DistansPerFrame, true, &HitResult);
-	// Check physical blocking
-	if (HitResult.IsValidBlockingHit())
-	{
-		Velocity = FVector::ZeroVector;
-	}
-}
-
-FVector ACarPawn::GetAirResistance()
-{
-	return -Velocity.GetSafeNormal() * FMath::Square(Velocity.Size()) * CarDragCoefficient;
-}
-
-FVector ACarPawn::GetRollingResistance()
-{
-	float AccelerationDueToGravity = - GetWorld()->GetGravityZ()/100 * MassOfTheCarInKg;
-	FVector NormalForce = - Velocity.GetSafeNormal() * RollingResistanceCoefficient * AccelerationDueToGravity;
-	return NormalForce;
-}
-
-FString ACarPawn::GetEnumRoleString(ENetRole LocalRole)
-{
-	switch (LocalRole)
-	{
-		case ROLE_None:
-			return "None";
-			break;
-		case ROLE_SimulatedProxy:
-			return "SimulatedProxy";
-			break;
-		case ROLE_AutonomousProxy:
-			return "AutonomousProxy";
-			break;
-		case ROLE_Authority:
-			return "Authority";
-			break;
-		case ROLE_MAX:
-			return "MAX";
-			break;
-		default:
-			return "ERROR";
-			break;
-	}
 }
 
 // Called to bind functionality to input
@@ -231,24 +95,18 @@ void ACarPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void ACarPawn::MoveForward(float Value)
 {
-	Throttle = Value;
+	if (!ensureMsgf(MovementComponent, TEXT("MovementComponent is not found")))
+	{
+		return;
+	}
+	MovementComponent->SetThrottle(Value);
 }
 
 void ACarPawn::MoveRight(float Value)
 {
-	SteeringThrow = Value;
-}
-
-void ACarPawn::Server_SendMove_Implementation(FCarPawnMove Move)
-{// Simulate move
-	SimulateMove(Move);
-	// Send the canonical state to the server
-	ServerState.Transform = GetActorTransform();
-	ServerState.Velocity = Velocity;
-	ServerState.LastMove = Move;
-}
-
-bool ACarPawn::Server_SendMove_Validate(FCarPawnMove Move)
-{
-	return true;// TODO check move
+	if (!ensureMsgf(MovementComponent, TEXT("MovementComponent is not found")))
+	{
+		return;
+	}
+	MovementComponent->SetSteeringThrow(Value);
 }
