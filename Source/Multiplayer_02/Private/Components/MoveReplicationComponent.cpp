@@ -33,17 +33,18 @@ void UMoveReplicationComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 	// Get last move to send with RPC and check it on the server side
 	auto LastMove = MovementComponent->GetLastMove();
 
-	/*auto ControlledPawn = Cast<APawn>(GetOwner());
+	auto ControlledPawn = Cast<APawn>(GetOwner());
 	if (!ensureMsgf(ControlledPawn, TEXT("Inside the movement component Pawn is not found!")))
 	{
 		return;
 	}
-	if (ControlledPawn->IsLocallyControlled())
+	// Update Listen-Client state on the server for simulation purposes
+	if (GetOwnerRole() == ROLE_Authority && ControlledPawn->IsLocallyControlled())
 	{
+		AddMoveToTheQueue(LastMove);
 		UpdateServerState(LastMove);
-	}*/
-
-	// (Client-side) Autonomous-proxy Client code
+	}
+	// 
 	if (GetOwnerRole() == ROLE_AutonomousProxy)
 	{
 		/* Add move to the queue and send it to the server (!!!) where
@@ -51,6 +52,35 @@ void UMoveReplicationComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 		AddMoveToTheQueue(LastMove);
 		Server_SendMove(LastMove);
 	}
+
+	if (GetOwnerRole() == ROLE_SimulatedProxy)
+	{
+		SimulatedClientTick(DeltaTime);
+	}
+}
+
+void UMoveReplicationComponent::SimulatedClientTick(float ClientDeltaTime)
+{
+	ClientTimeSinceUpdate += ClientDeltaTime;
+
+	if (ClientTimeBetweenLastUpdates < KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// Find Lerp ratio based on server update time
+	auto LerpRatio = ClientTimeSinceUpdate / ClientTimeBetweenLastUpdates;
+
+	// Get aim location and rotation
+	auto TargetLocation = ServerState.Transform.GetLocation();
+	auto TargetRotation = ServerState.Transform.GetRotation();
+
+	// Interpolate to a new location
+	auto NextLocation = FMath::LerpStable(ClientStartTransform.GetLocation(), TargetLocation, LerpRatio);
+	GetOwner()->SetActorLocation(NextLocation);
+	// Interpolate to a new rotation
+	auto NextRotation = FQuat::Slerp(ClientStartTransform.GetRotation(), TargetRotation, LerpRatio);
+	GetOwner()->SetActorRotation(NextRotation);
 }
 
 void UMoveReplicationComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
@@ -86,6 +116,21 @@ void UMoveReplicationComponent::UpdateServerState(FCarPawnMove LastMove)
 
 void UMoveReplicationComponent::OnRep_ServerState()
 {
+	switch (GetOwnerRole())
+	{
+		case ROLE_AutonomousProxy:
+			AutonomousProxyOnRep_ServerState();
+			break;
+		case ROLE_SimulatedProxy:
+			SimulatedProxyOnRep_ServerState();
+			break;
+		default:
+			break;
+	}
+}
+
+void UMoveReplicationComponent::AutonomousProxyOnRep_ServerState()
+{
 	if (!ensureMsgf(MovementComponent, TEXT("MovementComponent is not found")))
 	{
 		return;
@@ -93,15 +138,21 @@ void UMoveReplicationComponent::OnRep_ServerState()
 	// Replicate actors state on the client if on the server it was changed
 	GetOwner()->SetActorTransform(ServerState.Transform);
 	MovementComponent->SetVelocity(ServerState.Velocity);
-	// Update unacknowledge moves
+	// Update unacknowledged moves
 	RemoveStaleMoves(ServerState.LastMove);
-	// Reproduce all moves after recieving the server move state
+	// Reproduce all moves after receiving the server move state
 	for (const FCarPawnMove& Move : UnacknowledgeMovesArray)
 	{
 		MovementComponent->SimulateMove(Move);
 	}
 }
 
+void UMoveReplicationComponent::SimulatedProxyOnRep_ServerState()
+{
+	ClientTimeBetweenLastUpdates = ClientTimeSinceUpdate;
+	ClientTimeSinceUpdate = 0.0f;
+	ClientStartTransform = GetOwner()->GetActorTransform();
+}
 void UMoveReplicationComponent::Server_SendMove_Implementation(FCarPawnMove Move)
 {
 	if (!ensureMsgf(MovementComponent, TEXT("MovementComponent is not found")))

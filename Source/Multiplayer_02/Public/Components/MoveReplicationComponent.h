@@ -58,6 +58,15 @@ private:
 
 	TArray<FCarPawnMove> UnacknowledgeMovesArray;
 	void RemoveStaleMoves(FCarPawnMove LastMove);
-
 	void UpdateServerState(FCarPawnMove LastMove);
+	
+	// Move interpolation
+	float ClientTimeSinceUpdate = 0.0f;
+	float ClientTimeBetweenLastUpdates = 0.0f;
+	FTransform ClientStartTransform;
+
+	void SimulatedClientTick(float ClientDeltaTime);
+
+	void AutonomousProxyOnRep_ServerState();
+	void SimulatedProxyOnRep_ServerState();
 };

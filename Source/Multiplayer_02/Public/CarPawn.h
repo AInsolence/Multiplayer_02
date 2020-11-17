@@ -23,21 +23,21 @@ protected:
 
 	// Components
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	class UBoxComponent* CollisionBox;
+	class UBoxComponent* CollisionBox = nullptr;
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	USkeletalMeshComponent* CarMesh;
+	USkeletalMeshComponent* CarMesh = nullptr;
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	class USpringArmComponent* SpringArm;
+	class USpringArmComponent* SpringArm = nullptr;
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	class UCameraComponent* Camera_01;
+	class UCameraComponent* Camera_01 = nullptr;
 	
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	class UMoveReplicationComponent* MoveReplicationComponent;
+	class UMoveReplicationComponent* MoveReplicationComponent = nullptr;
 
 public:	
 
 	UPROPERTY(EditAnywhere, Category = "Car Components")
-	class UCarMovementComponent* MovementComponent;
+	class UCarMovementComponent* MovementComponent = nullptr;
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	

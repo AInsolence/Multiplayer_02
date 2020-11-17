@@ -15,6 +15,8 @@ ACarPawn::ACarPawn()
 	PrimaryActorTick.bCanEverTick = true;
 	// Make acrtor be replicated
 	bReplicates = true;
+	// Off movement replication cause of custom movement component
+	SetReplicateMovement(false);
 
 	// Create mesh component
 	CollisionBox = CreateDefaultSubobject<UBoxComponent>("CollisionBox");
