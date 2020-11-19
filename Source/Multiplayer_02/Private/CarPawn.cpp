@@ -71,7 +71,7 @@ void ACarPawn::BeginPlay()
 	Super::BeginPlay();
 	if (HasAuthority())
 	{
-		NetUpdateFrequency = 1.0f;
+		//NetUpdateFrequency = 1.0f;
 	}
 }
 

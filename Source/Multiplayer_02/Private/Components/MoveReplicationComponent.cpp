@@ -68,6 +68,11 @@ void UMoveReplicationComponent::SimulatedClientTick(float ClientDeltaTime)
 		return;
 	}
 
+	if (!ensureMsgf(MovementComponent, TEXT("SimulatedClientTick: MovementComponent is not found")))
+	{
+		return;
+	}
+
 	// Find Lerp ratio based on server update time
 	auto LerpRatio = ClientTimeSinceUpdate / ClientTimeBetweenLastUpdates;
 
@@ -75,10 +80,31 @@ void UMoveReplicationComponent::SimulatedClientTick(float ClientDeltaTime)
 	auto TargetLocation = ServerState.Transform.GetLocation();
 	auto TargetRotation = ServerState.Transform.GetRotation();
 
-	// Interpolate to a new location
-	auto NextLocation = FMath::LerpStable(ClientStartTransform.GetLocation(), TargetLocation, LerpRatio);
+	// Additional variables for hermits cubic interpolation
+	float VelocityDerivativeTime = ClientTimeBetweenLastUpdates * 100;
+	FVector StartVelocityDerivative = ClientStartVelocity * VelocityDerivativeTime;
+	FVector TargetVelocityDerivative = ServerState.Velocity * VelocityDerivativeTime;
+
+	// Interpolate the location
+	auto NextLocation = FMath::CubicInterp(ClientStartTransform.GetLocation(), 
+										   StartVelocityDerivative, 
+										   TargetLocation, 
+										   TargetVelocityDerivative, 
+										   LerpRatio);
+	// Set a new location
 	GetOwner()->SetActorLocation(NextLocation);
-	// Interpolate to a new rotation
+
+	// Find an interpolated velocity derivative
+	FVector VelocityDerivative = FMath::CubicInterpDerivative(ClientStartTransform.GetLocation(),
+																	StartVelocityDerivative,
+																	TargetLocation,
+																	TargetVelocityDerivative,
+																	LerpRatio);
+	FVector NextVelocity = VelocityDerivative / VelocityDerivativeTime;
+	// Set a new velocity
+	MovementComponent->SetVelocity(NextVelocity);
+
+	// Interpolate the rotation
 	auto NextRotation = FQuat::Slerp(ClientStartTransform.GetRotation(), TargetRotation, LerpRatio);
 	GetOwner()->SetActorRotation(NextRotation);
 }
