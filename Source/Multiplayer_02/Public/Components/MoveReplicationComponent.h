@@ -21,6 +21,33 @@ struct FCarPawnState
 	FCarPawnMove LastMove;
 };
 
+struct FHermitCubicSpline
+{
+	FVector StartLocation;
+	FVector TargetLocation;
+	FVector StartVelocityDerivative;
+	FVector TargetVelocityDerivative;
+
+	float VelocityDerivativeTime;
+
+	FVector GetInterpolatedLocation(float LerpRatio) const
+	{
+		return FMath::CubicInterp(StartLocation,
+								  StartVelocityDerivative,
+								  TargetLocation,
+								  TargetVelocityDerivative,
+								  LerpRatio);
+	}
+	FVector GetInterpolatedVelocity(float LerpRatio) const
+	{
+		return FMath::CubicInterpDerivative(StartLocation,
+											StartVelocityDerivative,
+											TargetLocation,
+											TargetVelocityDerivative,
+											LerpRatio);
+	}
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class MULTIPLAYER_02_API UMoveReplicationComponent : public UActorComponent
 {
@@ -55,12 +82,15 @@ private:
 	FCarPawnState ServerState;
 	UFUNCTION() // Replication function calls OnReps
 	void OnRep_ServerState();
+	void AutonomousProxyOnRep_ServerState();
+	void SimulatedProxyOnRep_ServerState();
 
 	TArray<FCarPawnMove> UnacknowledgeMovesArray;
 	void RemoveStaleMoves(FCarPawnMove LastMove);
 	void UpdateServerState(FCarPawnMove LastMove);
 	
 	// Move interpolation
+	int32 MToCmCoeff = 100;
 	float ClientTimeSinceUpdate = 0.0f;
 	float ClientTimeBetweenLastUpdates = 0.0f;
 	FTransform ClientStartTransform;
@@ -68,6 +98,8 @@ private:
 
 	void SimulatedClientTick(float ClientDeltaTime);
 
-	void AutonomousProxyOnRep_ServerState();
-	void SimulatedProxyOnRep_ServerState();
+	FHermitCubicSpline CreateSpline();
+	void InterpolateLocation(const FHermitCubicSpline& Spline, float LerpRatio);
+	void InterpolateVelocity(const FHermitCubicSpline& Spline, float LerpRatio);
+	void InterpolateRotation(float LerpRatio);
 };

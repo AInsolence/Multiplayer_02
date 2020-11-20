@@ -75,36 +75,45 @@ void UMoveReplicationComponent::SimulatedClientTick(float ClientDeltaTime)
 
 	// Find Lerp ratio based on server update time
 	auto LerpRatio = ClientTimeSinceUpdate / ClientTimeBetweenLastUpdates;
+	
+	// Create interpolation spline
+	FHermitCubicSpline Spline = CreateSpline();
+	
+	InterpolateLocation(Spline, LerpRatio);
+	InterpolateVelocity(Spline, LerpRatio);
+	InterpolateRotation(LerpRatio);
+}
 
-	// Get aim location and rotation
-	auto TargetLocation = ServerState.Transform.GetLocation();
-	auto TargetRotation = ServerState.Transform.GetRotation();
+FHermitCubicSpline UMoveReplicationComponent::CreateSpline()
+{
+	FHermitCubicSpline Spline;
 
-	// Additional variables for hermits cubic interpolation
-	float VelocityDerivativeTime = ClientTimeBetweenLastUpdates * 100;
-	FVector StartVelocityDerivative = ClientStartVelocity * VelocityDerivativeTime;
-	FVector TargetVelocityDerivative = ServerState.Velocity * VelocityDerivativeTime;
+	Spline.StartLocation = ClientStartTransform.GetLocation();
+	Spline.TargetLocation = ServerState.Transform.GetLocation();
+	Spline.StartVelocityDerivative = ClientStartVelocity * ClientTimeBetweenLastUpdates * MToCmCoeff;
+	Spline.TargetVelocityDerivative = ServerState.Velocity * ClientTimeBetweenLastUpdates * MToCmCoeff;
 
-	// Interpolate the location
-	auto NextLocation = FMath::CubicInterp(ClientStartTransform.GetLocation(), 
-										   StartVelocityDerivative, 
-										   TargetLocation, 
-										   TargetVelocityDerivative, 
-										   LerpRatio);
-	// Set a new location
+	return Spline;
+}
+
+void UMoveReplicationComponent::InterpolateLocation(const FHermitCubicSpline& Spline, float LerpRatio)
+{
+	auto NextLocation = Spline.GetInterpolatedLocation(LerpRatio);
 	GetOwner()->SetActorLocation(NextLocation);
+}
 
+void UMoveReplicationComponent::InterpolateVelocity(const FHermitCubicSpline& Spline, float LerpRatio)
+{
 	// Find an interpolated velocity derivative
-	FVector VelocityDerivative = FMath::CubicInterpDerivative(ClientStartTransform.GetLocation(),
-																	StartVelocityDerivative,
-																	TargetLocation,
-																	TargetVelocityDerivative,
-																	LerpRatio);
-	FVector NextVelocity = VelocityDerivative / VelocityDerivativeTime;
+	FVector VelocityDerivative = Spline.GetInterpolatedVelocity(LerpRatio);
+	FVector NextVelocity = VelocityDerivative / (ClientTimeBetweenLastUpdates * MToCmCoeff);
 	// Set a new velocity
 	MovementComponent->SetVelocity(NextVelocity);
+}
 
-	// Interpolate the rotation
+void UMoveReplicationComponent::InterpolateRotation(float LerpRatio)
+{
+	auto TargetRotation = ServerState.Transform.GetRotation();
 	auto NextRotation = FQuat::Slerp(ClientStartTransform.GetRotation(), TargetRotation, LerpRatio);
 	GetOwner()->SetActorRotation(NextRotation);
 }
@@ -175,9 +184,15 @@ void UMoveReplicationComponent::AutonomousProxyOnRep_ServerState()
 
 void UMoveReplicationComponent::SimulatedProxyOnRep_ServerState()
 {
+	if (!ensureMsgf(MovementComponent, TEXT("SimulatedProxyOnRep_ServerState: MovementComponent is not found")))
+	{
+		return;
+	}
+	// Update simulation variables
 	ClientTimeBetweenLastUpdates = ClientTimeSinceUpdate;
 	ClientTimeSinceUpdate = 0.0f;
 	ClientStartTransform = GetOwner()->GetActorTransform();
+	ClientStartVelocity = MovementComponent->GetVelocity();
 }
 void UMoveReplicationComponent::Server_SendMove_Implementation(FCarPawnMove Move)
 {
