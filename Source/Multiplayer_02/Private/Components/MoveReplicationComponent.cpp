@@ -18,6 +18,11 @@ void UMoveReplicationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	MovementComponent = GetOwner()->FindComponentByClass<UCarMovementComponent>();
+	auto MeshOffsetObject = GetOwner()->GetDefaultSubobjectByName("MeshOffsetComponet");
+	if (MeshOffsetObject)
+	{
+		MeshOffsetComponent = Cast<USceneComponent>(MeshOffsetObject);
+	}
 }
 
 
@@ -99,7 +104,11 @@ FHermitCubicSpline UMoveReplicationComponent::CreateSpline()
 void UMoveReplicationComponent::InterpolateLocation(const FHermitCubicSpline& Spline, float LerpRatio)
 {
 	auto NextLocation = Spline.GetInterpolatedLocation(LerpRatio);
-	GetOwner()->SetActorLocation(NextLocation);
+	// Move only mesh into the interpolated position
+	if (MeshOffsetComponent)
+	{
+		MeshOffsetComponent->SetWorldLocation(NextLocation);
+	}
 }
 
 void UMoveReplicationComponent::InterpolateVelocity(const FHermitCubicSpline& Spline, float LerpRatio)
@@ -115,7 +124,11 @@ void UMoveReplicationComponent::InterpolateRotation(float LerpRatio)
 {
 	auto TargetRotation = ServerState.Transform.GetRotation();
 	auto NextRotation = FQuat::Slerp(ClientStartTransform.GetRotation(), TargetRotation, LerpRatio);
-	GetOwner()->SetActorRotation(NextRotation);
+	// Apply interpolated rotation only to the mesh
+	if (MeshOffsetComponent)
+	{
+		MeshOffsetComponent->SetWorldRotation(NextRotation);
+	}
 }
 
 void UMoveReplicationComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
@@ -140,13 +153,6 @@ void UMoveReplicationComponent::RemoveStaleMoves(FCarPawnMove LastMove)
 		}
 	}
 	UnacknowledgeMovesArray = NewMoves;
-}
-
-void UMoveReplicationComponent::UpdateServerState(FCarPawnMove LastMove)
-{
-	ServerState.Transform = GetOwner()->GetActorTransform();
-	ServerState.Velocity = MovementComponent->GetVelocity();
-	ServerState.LastMove = LastMove;
 }
 
 void UMoveReplicationComponent::OnRep_ServerState()
@@ -188,11 +194,19 @@ void UMoveReplicationComponent::SimulatedProxyOnRep_ServerState()
 	{
 		return;
 	}
+
 	// Update simulation variables
 	ClientTimeBetweenLastUpdates = ClientTimeSinceUpdate;
 	ClientTimeSinceUpdate = 0.0f;
-	ClientStartTransform = GetOwner()->GetActorTransform();
 	ClientStartVelocity = MovementComponent->GetVelocity();
+	if (MeshOffsetComponent != nullptr)
+	{
+		ClientStartTransform.SetLocation(MeshOffsetComponent->GetComponentLocation());
+		ClientStartTransform.SetRotation(MeshOffsetComponent->GetComponentQuat());
+	}
+	
+	// Set right collider position
+	GetOwner()->SetActorTransform(ServerState.Transform);
 }
 void UMoveReplicationComponent::Server_SendMove_Implementation(FCarPawnMove Move)
 {
@@ -200,15 +214,39 @@ void UMoveReplicationComponent::Server_SendMove_Implementation(FCarPawnMove Move
 	{
 		return;
 	}
+	// Update client time for anti-cheat
+	ClientSimulationTime += Move.DeltaTime;
 	// Simulate move on the server ("Canonical simulation)
 	MovementComponent->SimulateMove(Move);
 	// Save the canonical state on the server
 	UpdateServerState(Move);
 }
 
+void UMoveReplicationComponent::UpdateServerState(FCarPawnMove LastMove)
+{
+	ServerState.Transform = GetOwner()->GetActorTransform();
+	ServerState.Velocity = MovementComponent->GetVelocity();
+	ServerState.LastMove = LastMove;
+}
+
 bool UMoveReplicationComponent::Server_SendMove_Validate(FCarPawnMove Move)
 {
-	return true;// TODO check move
+	// Check client's input
+	if (!Move.IsInputValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("User try to use input cheat"));
+		return false;
+	}
+
+	// Check client's delta time proposition
+	float ProposedTime = ClientSimulationTime + Move.DeltaTime;
+	if (ProposedTime > GetWorld()->TimeSeconds)
+	{
+		UE_LOG(LogTemp, Error, TEXT("User use cheat and try to run faster than server"));
+		return false;
+	}
+
+	return true;
 }
 
 FString UMoveReplicationComponent::GetEnumRoleString(ENetRole LocalRole)

@@ -11,16 +11,21 @@ struct FCarPawnMove
 {
 	GENERATED_BODY()
 
-		UPROPERTY(VisibleAnywhere, Category = "Car Move")
-		float Throttle = 0.f;
+	UPROPERTY(VisibleAnywhere, Category = "Car Move")
+	float Throttle = 0.f;
 	UPROPERTY(EditAnywhere, Category = "Car Move")
-		float SteeringThrow = 0.f;
+	float SteeringThrow = 0.f;
 
 	UPROPERTY(VisibleAnywhere, Category = "Car Move")
-		float DeltaTime;
+	float DeltaTime;
 
 	UPROPERTY(VisibleAnywhere, Category = "Car Move")
-		float TimeOfExecuting;
+	float TimeOfExecuting;
+
+	bool IsInputValid()
+	{
+		return FMath::Abs(Throttle) <= 1 && FMath::Abs(SteeringThrow) <= 1;
+	}
 };
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )

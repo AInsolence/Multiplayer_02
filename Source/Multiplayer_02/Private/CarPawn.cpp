@@ -13,7 +13,7 @@ ACarPawn::ACarPawn()
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-	// Make acrtor be replicated
+	// Make actor be replicated
 	bReplicates = true;
 	// Off movement replication cause of custom movement component
 	SetReplicateMovement(false);
@@ -21,6 +21,8 @@ ACarPawn::ACarPawn()
 	// Create mesh component
 	CollisionBox = CreateDefaultSubobject<UBoxComponent>("CollisionBox");
 	SetRootComponent(CollisionBox);
+	// Create mesh offset component to separate collider and mesh simulated paths
+	MeshOffsetComponent = CreateDefaultSubobject<USceneComponent>("MeshOffsetComponent");
 	// Create mesh component
 	CarMesh = CreateDefaultSubobject<USkeletalMeshComponent>("CarMesh");
 	// Create spring arm for the main camera
@@ -36,29 +38,34 @@ ACarPawn::ACarPawn()
 		MoveReplicationComponent->SetIsReplicated(true);
 	}
 
-	// Set components hierarcy attachment
+	// Set components hierarchy attachment
 	if (ensureMsgf(CollisionBox, TEXT("CollisionBox component is not found")))
 	{
 		// Set physics
 		CollisionBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		CollisionBox->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
 
-		if (ensureMsgf(CarMesh, TEXT("Mesh component is not found")))
+		if (ensureMsgf(MeshOffsetComponent, TEXT("Mesh component is not found")))
 		{
-			CarMesh->SetupAttachment(CollisionBox);
+			MeshOffsetComponent->SetupAttachment(CollisionBox);
 
-			if (ensureMsgf(SpringArm, TEXT("SpringArm component is not found")))
+			if (ensureMsgf(CarMesh, TEXT("Mesh component is not found")))
 			{
-				SpringArm->TargetArmLength = 600.f;
-				// Turn spring arm under the ground
-				SpringArm->SetRelativeRotation(FQuat::MakeFromEuler(FVector(0, -25, 0)));
-				SpringArm->SetupAttachment(CarMesh);
+				CarMesh->SetupAttachment(MeshOffsetComponent);
 
-				if (ensureMsgf(Camera_01, TEXT("Camera_01 component is not found")))
+				if (ensureMsgf(SpringArm, TEXT("SpringArm component is not found")))
 				{
-					Camera_01->FieldOfView = 90.f;
-					Camera_01->SetupAttachment(SpringArm);
-					Camera_01->Activate(true);
+					SpringArm->TargetArmLength = 600.f;
+					// Turn spring arm under the ground
+					SpringArm->SetRelativeRotation(FQuat::MakeFromEuler(FVector(0, -25, 0)));
+					SpringArm->SetupAttachment(CarMesh);
+
+					if (ensureMsgf(Camera_01, TEXT("Camera_01 component is not found")))
+					{
+						Camera_01->FieldOfView = 90.f;
+						Camera_01->SetupAttachment(SpringArm);
+						Camera_01->Activate(true);
+					}
 				}
 			}
 		}

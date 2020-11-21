@@ -52,7 +52,6 @@ FCarPawnMove UCarMovementComponent::CreateMove(float DeltaTime)
 			Move.TimeOfExecuting = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
 		}
 	}
-	
 	return Move;
 }
 

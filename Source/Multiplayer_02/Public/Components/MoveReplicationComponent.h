@@ -98,8 +98,13 @@ private:
 
 	void SimulatedClientTick(float ClientDeltaTime);
 
+	USceneComponent* MeshOffsetComponent = nullptr;
+
 	FHermitCubicSpline CreateSpline();
 	void InterpolateLocation(const FHermitCubicSpline& Spline, float LerpRatio);
 	void InterpolateVelocity(const FHermitCubicSpline& Spline, float LerpRatio);
 	void InterpolateRotation(float LerpRatio);
+
+	// Anti-cheat protection
+	float ClientSimulationTime = 0;
 };

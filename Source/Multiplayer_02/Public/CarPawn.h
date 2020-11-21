@@ -38,6 +38,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Car Components")
 	class UCarMovementComponent* MovementComponent = nullptr;
+	UPROPERTY(EditAnywhere, Category = "Car Components")
+	class USceneComponent* MeshOffsetComponent = nullptr;
+
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	
